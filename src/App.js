@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { FFmpeg  } from '@ffmpeg/ffmpeg';
+import { fetchFile } from '@ffmpeg/util';
 import './App.css';
 
 function App() {
@@ -6,6 +8,9 @@ function App() {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(150);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const ffmpeg = new FFmpeg();
 
   useEffect(() => {
     let timer;
@@ -61,6 +66,44 @@ function App() {
     }
   };
 
+  const generateVideo = async () => {
+    setIsGenerating(true);
+    if (!ffmpeg.loaded) {
+      await ffmpeg.load();
+    }
+  
+    
+    // Write images to FFmpeg's virtual file system
+    for (let i = 0; i < images.length; i++) {
+      const response = await fetch(images[i]);
+      const blob = await response.blob();
+      await ffmpeg.writeFile(`img${i}.jpg`, await fetchFile(blob));
+    }
+   
+    // Generate video from images
+    const fps = Math.round(1000 / speed);
+    await ffmpeg.exec([
+      '-framerate', `${fps}`,
+      '-i', 'img%d.jpg',
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      'output.mp4'
+    ]);
+  
+    // Read the generated video file
+    const data = await ffmpeg.readFile('output.mp4');
+    const videoBlob = new Blob([data.buffer], { type: 'video/mp4' });
+    const videoUrl = URL.createObjectURL(videoBlob);
+  
+    // Create a download link
+    const link = document.createElement('a');
+    link.href = videoUrl;
+    link.download = 'timelapse.mp4';
+    link.click();
+  
+    setIsGenerating(false);
+  };
+
   useEffect(() => {
     const handleFullscreenChange = () => {
       const imgElement = document.querySelector('img');
@@ -106,6 +149,9 @@ function App() {
             <span>{2000 - speed}</span>
             <button onClick={clearImages}>Clear</button>
             <button onClick={toggleFullscreen}>Fullscreen</button>
+            <button onClick={generateVideo} disabled={isGenerating}>
+              {isGenerating ? 'Generating...' : 'Download Video'}
+            </button>
           </div>
         </>
       )}
